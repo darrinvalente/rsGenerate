@@ -9,14 +9,19 @@ namespace RSGenerate
 {
     public static class XMLHelper
     {
-        public static string GetAttribute(XElement element, string name)
+        public static string GetAttributeValue(XElement element, string name)
         {
-            var attr = element.Attributes().Where(a => a.Name == name).FirstOrDefault();
+            var attr = GetAttribute(element, name);
 
             if (attr == null)
                 return string.Empty;
 
             return attr.Value.ToString();
+        }
+
+        public static XAttribute GetAttribute(XElement element, string name)
+        {
+            return element.Attributes().Where(a => a.Name == name).FirstOrDefault();
         }
 
         public static XElement GetChildElement(XElement parent, string name)
@@ -26,7 +31,8 @@ namespace RSGenerate
 
         public static XElement CreateRoutineElement(string name)
         {
-            return new XElement("Routine", new XAttribute("Name", name), new XAttribute("Type", "RLL"), new XElement("RLLContent"));
+            return new XElement("Routine", new XAttribute("Name", name), new XAttribute("Type", "RLL"), 
+                        new XElement("RLLContent"));
         }
 
         public static XElement GetOrCreateRoutinesElement(XElement root)
@@ -53,9 +59,9 @@ namespace RSGenerate
 
         public static XElement GetOrCreateRoutineWithName(XElement routinesElement, string name)
         {
-            var routine = routinesElement.DescendantNodes().OfType<XElement>()
-                .Where(e => e.Attributes().Any(a => a.Name == "Name" && a.Value == name))
-                .FirstOrDefault();
+            var routine = routinesElement.Elements()
+                                .Where(e => e.Attributes().Any(a => a.Name == "Name" && a.Value == name))
+                                .FirstOrDefault();
 
             if (routine == null)
             {
