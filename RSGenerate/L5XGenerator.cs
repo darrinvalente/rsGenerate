@@ -71,8 +71,8 @@ namespace RSGenerate
         {
             //read config data from row
             var conveyorNumber = GetCellValue(row, "Conveyor Number");
-            var inboundConnection = GetCellValue(row, "IB Connection");
-            var outboundConnection = GetCellValue(row, "OB Connection");
+            var inboundConnection = "CONVEYOR_" + GetCellValue(row, "IB Connection");
+            var outboundConnection = "CONVEYOR_" + GetCellValue(row, "OB Connection");
             var targetRoutineName = GetCellValue(row, "Target Routine Name");
             var motorTemplateRoutineName = GetCellValue(row, "Motor Control Template Routine");
             string deviceName = null;
@@ -82,9 +82,6 @@ namespace RSGenerate
 
             conveyorNumber = "CONVEYOR_" + conveyorNumber;
             this.CreateControllerTag(conveyorNumber, "FXG_CONVEYOR");
-
-            //Import Motor Control Code
-            //this.ImportSourceLadderRungs(routines, motorTemplateRoutineName, targetRoutineName, conveyorNumber, inboundConnection, outboundConnection, null);
 
             //Import Disconnect Fault Code
             this.ImportSourceLadderRungs(routines, "FXG_MOTOR_DISC", "MOTOR_DISC", "CONVEYOR_XXX", conveyorNumber, inboundConnection, outboundConnection, null);
@@ -106,7 +103,7 @@ namespace RSGenerate
             {
                 deviceName = "CS_" + deviceName;
                 this.CreateControllerTag(deviceName, "CS_SE");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SE", "CS_SE", "CS_SE2_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.ImportSourceLadderRungs(routines, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
             }
 
             ////Import SM Logic
@@ -170,6 +167,8 @@ namespace RSGenerate
                 this.ImportSourceLadderRungs(routines, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
             }
 
+            //Import Motor Control Code
+           // this.ImportSourceLadderRungs(routines, motorTemplateRoutineName, targetRoutineName, conveyorNumber, inboundConnection, outboundConnection, null);
         }
 
         private void CreateControllerTag(string tagName, string dataType)
@@ -200,9 +199,9 @@ namespace RSGenerate
             //Perform Tag Replacement in ladder text
             foreach (var rung in sourceRungs)
             {
-                this.ReplaceTagMembers(rung, sourceTag, currentTag);               
-                this.ReplaceTagMembers(rung, "IB_CONNECTION", inboundConnection);
-                this.ReplaceTagMembers(rung, "OB_CONNECTION", outboundConnection);
+                this.ReplaceTagMembers(rung, deviceName, currentTag);               
+                this.ReplaceTagMembers(rung, "CONVEYOR_IB_CONNECTION", inboundConnection);
+                this.ReplaceTagMembers(rung, "CONVEYOR_OB_CONNECTION", outboundConnection);
 
                 this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", currentTag);
             }
