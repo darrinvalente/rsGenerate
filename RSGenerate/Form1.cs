@@ -40,7 +40,7 @@ namespace RSGenerate
                 label1.Text = fileName;
             }
 
-            _generator.LoadTemplate(fileName);
+            _generator.LoadL5XTemplate(fileName);
 
             txtLog.Text += string.Format("Template File {0} chosen for processing.", fileName) + "\r\n";
 
@@ -85,7 +85,7 @@ namespace RSGenerate
                 label2.Text = fileName;
             }
 
-            _generator.LoadDefinition(fileName);
+            _generator.LoadXLSXDefinition(fileName);
 
             txtLog.Text += string.Format("Definition File {0} chosen for processing.", fileName) + "\r\n";
         }

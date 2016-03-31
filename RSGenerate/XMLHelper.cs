@@ -71,5 +71,17 @@ namespace RSGenerate
 
             return routine;
         }
+
+        public static XElement CreateTag(string tagName, string dataType, string tagType = "Base", string externalAccess = "Read/Write", bool? constant = false)
+        {
+            
+            return new XElement("Tag",
+                        new XAttribute("Constant", constant == null ? "False" : constant.ToString()),
+                        new XAttribute("DataType", dataType),
+                        new XAttribute("ExternalAccess", externalAccess),
+                        new XAttribute("Name", tagName),
+                        new XAttribute("TagType", tagType)
+                    );
+        }
     }
 }

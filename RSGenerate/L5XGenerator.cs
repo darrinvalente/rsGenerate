@@ -12,62 +12,66 @@ namespace RSGenerate
 {
     public class L5XGenerator
     {
-        public XDocument TemplateDoc { get; private set; }
-        public IExcelDataReader SystemDefinition { get; private set; }
-        public XDocument Output { get; private set; }
+        public XDocument L5XTemplate { get; private set; }
+        public IExcelDataReader ExcelSystemDefinition { get; private set; }
+        public XDocument L5XOutput { get; private set; }
 
-        private string _templatePath;
+        private string _L5XTemplatePath;
+        private string _OutputFileName;
 
-        public void LoadTemplate(string filePath)
+        private const string _SourceProgramName = "Templates"; //Name of the Logix Program that contains the Template Routines
+
+        public void LoadL5XTemplate(string filePath)
         {
-            TemplateDoc = XDocument.Load(filePath);
-            _templatePath = System.IO.Path.GetDirectoryName(filePath);
+            L5XTemplate = XDocument.Load(filePath);
+            _L5XTemplatePath = System.IO.Path.GetDirectoryName(filePath);
+            _OutputFileName = _L5XTemplatePath + "\\GeneratedProject.L5X";
         }
 
-        public void LoadDefinition(string filePath)
+        public void LoadXLSXDefinition(string filePath)
         {
             FileStream stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             var fileInfo = new FileInfo(filePath);
 
             if (fileInfo.Extension == ".xlsx")
-                SystemDefinition = ExcelReaderFactory.CreateOpenXmlReader(stream);
+                ExcelSystemDefinition = ExcelReaderFactory.CreateOpenXmlReader(stream);
         }
 
         public string GenerateAndSaveOutput()
         {
-            if (TemplateDoc == null)
+            if (L5XTemplate == null)
                 throw new ArgumentNullException("You must first specify a TemplateDoc prior to calling Generate()");
 
-            if (SystemDefinition == null)
+            if (ExcelSystemDefinition == null)
                 throw new ArgumentNullException("You must first specify a SystemDefinition prior to calling Generate()");
 
-            var reader = SystemDefinition;
+            var reader = ExcelSystemDefinition;
             reader.IsFirstRowAsColumnNames = true;
             DataSet dataset = reader.AsDataSet();
             string sheetName = "Sheet1";
 
-            var routines = XMLHelper.GetOrCreateRoutinesElement((XElement)this.TemplateDoc.FirstNode);
+            var routines = XMLHelper.GetOrCreateRoutinesElement((XElement)this.L5XTemplate.FirstNode);
 
             foreach (DataRow row in dataset.Tables[sheetName].Rows)
                 this.ProcessRow(row, routines);
 
             //Remove the Template Program from the Target before saving
-            this.TemplateDoc.Descendants("Program").Where(p => p.Attributes().Any(a => a.Name == "Name" && a.Value == "Templates")).FirstOrDefault().Remove();
+            this.L5XTemplate.Descendants("Program").Where(p => p.Attributes().Any(a => a.Name == "Name" && a.Value == "Templates")).FirstOrDefault().Remove();
 
             //once all the routines are created and/or added to renumber them all sequentially
             this.ReNumberLadder(routines);
 
-            var fileName = _templatePath + "\\GeneratedProject.L5X";
-            this.TemplateDoc.Save(fileName);
+            
+            this.L5XTemplate.Save(_OutputFileName);
 
-            return fileName;
+            return _OutputFileName;
         }
         private string GetCellValue(DataRow row, string col)
         {
             return row[col].ToString().Replace('-','_');
         }
 
-        private void ProcessRow(DataRow row, XElement routines)
+        private void ProcessRow(DataRow row, XElement routinesNode)
         {
             //read config data from row
             var conveyorNumber = GetCellValue(row, "Conveyor Number");
@@ -81,29 +85,29 @@ namespace RSGenerate
                 return;
 
             conveyorNumber = "CONVEYOR_" + conveyorNumber;
-            this.CreateControllerTag(conveyorNumber, "FXG_CONVEYOR");
+            this.AddControllerTag(conveyorNumber, "FXG_CONVEYOR");
 
             //Import Disconnect Fault Code
-            this.ImportSourceLadderRungs(routines, "FXG_MOTOR_DISC", "MOTOR_DISC", "CONVEYOR_XXX", conveyorNumber, inboundConnection, outboundConnection, null);
+            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", "CONVEYOR_XXX", conveyorNumber);
 
             //Import Motor Overload Code
-            this.ImportSourceLadderRungs(routines, "FXG_MOTOR_OVLD", "MOTOR_OVLD", "CONVEYOR_XXX", conveyorNumber, inboundConnection, outboundConnection, null);
+            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", "CONVEYOR_XXX", conveyorNumber);
 
             //Import SE Logic
             deviceName =  GetCellValue(row, "SE1");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SE");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SE");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "SE2");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SE");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SE");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName);
             }
 
             ////Import SM Logic
@@ -111,32 +115,32 @@ namespace RSGenerate
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SM");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SM");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "SM2");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SM");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SM");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "SS1");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SS");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SS");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "SS2");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_SS");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_SS");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName);
             }
 
             ////Import S1 Logic
@@ -147,63 +151,58 @@ namespace RSGenerate
             if (!string.IsNullOrEmpty(deviceName))
             {
                 //deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_EPC");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "EPC2");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 //deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_EPC");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
             }
 
             deviceName = GetCellValue(row, "EPC3");
             if (!string.IsNullOrEmpty(deviceName))
             {
                 //deviceName = "CS_" + deviceName;
-                this.CreateControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routines, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName, inboundConnection, outboundConnection, deviceName);
+                this.AddControllerTag(deviceName, "CS_EPC");
+                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
             }
 
             //Import Motor Control Code
            // this.ImportSourceLadderRungs(routines, motorTemplateRoutineName, targetRoutineName, conveyorNumber, inboundConnection, outboundConnection, null);
         }
 
-        private void CreateControllerTag(string tagName, string dataType)
+        private void AddControllerTag(string tagName, string dataType)
         {
-            var tag = new XElement("Tag",
-                                    new XAttribute("Constant", "False"),
-                                    new XAttribute("DataType", dataType),
-                                    new XAttribute("ExternalAccess", "Read/Write"),
-                                    new XAttribute("Name", tagName),
-                                    new XAttribute("TagType", "Base")
-                                );
-            this.TemplateDoc.Descendants("Controller").FirstOrDefault().Element("Tags").Add(tag);
+            var tagNode = XMLHelper.CreateTag(tagName, dataType);
+            this.L5XTemplate.Descendants("Controller").FirstOrDefault().Element("Tags").Add(tagNode);
         }
 
-        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTag, string currentTag, string inboundConnection, string outboundConnection, string deviceName)
+        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null)
         {
-            //Load Ladder Logic from Source Template
-            var sourceProgramName = "Templates";
 
-            //first we clone the source ladder rungs
-            var rungs = this.GetSourceRungs(sourceProgramName, sourceRountineName);
+            //first we clone the ladder rungs from the Source Template that is specified
+            var rungs = this.GetSourceRungs(_SourceProgramName, sourceRountineName);
             if (rungs == null)
                 return;
 
-            var sourceClone = new XElement("Source", rungs);
-            var sourceRungs = sourceClone.Elements("Rung");
+            var clone = new XElement("Source", rungs);
+            var sourceRungs = clone.Elements("Rung");
 
             //Perform Tag Replacement in ladder text
             foreach (var rung in sourceRungs)
             {
-                this.ReplaceTagMembers(rung, deviceName, currentTag);               
-                this.ReplaceTagMembers(rung, "CONVEYOR_IB_CONNECTION", inboundConnection);
-                this.ReplaceTagMembers(rung, "CONVEYOR_OB_CONNECTION", outboundConnection);
+                //replace main tag for routine
+                this.ReplaceTagMembers(rung, sourceTagName, targetTagName);
 
-                this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", currentTag);
+                //update device name in comments using token {DEVICE_NUMBER}
+                this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", targetTagName);
+
+                foreach (var item in additionalTagReplacements ?? new Dictionary<string, string>())
+                    this.ReplaceTagMembers(rung, item.Key, item.Value);
             }
 
             //Find the Right PLC Routine in Target
@@ -219,17 +218,12 @@ namespace RSGenerate
 
         private IEnumerable<XElement> GetSourceRungs(string programName, string routineName)
         {
-            var sourceProgram = this.TemplateDoc.Descendants("Program").Where(p => p.Attributes().Any(a => a.Name == "Name" && a.Value == programName)).FirstOrDefault();
+            var sourceProgram = this.L5XTemplate.Descendants("Program").Where(p => p.Attributes().Any(a => a.Name == "Name" && a.Value == programName)).FirstOrDefault();
             if (sourceProgram == null)
                 return null;
 
             var sourceRoutine = sourceProgram.Descendants("Routine").Where(p => p.Attributes().Any(a => a.Name == "Name" && a.Value == routineName)).FirstOrDefault();
             return sourceRoutine?.Descendants("Rung");
-        }
-
-        private XDocument LoadSourceTemplate(string fileName)
-        {
-            return XDocument.Load(Path.Combine(_templatePath, fileName));
         }
 
         private void ReplaceTagMembers(XElement rung, string fromTag, string toTag)
