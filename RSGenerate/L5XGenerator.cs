@@ -18,8 +18,22 @@ namespace RSGenerate
 
         private string _L5XTemplatePath;
         private string _OutputFileName;
+        private List<string> _DevicesProcessed;
 
         private const string _SourceProgramName = "Templates"; //Name of the Logix Program that contains the Template Routines
+        private const string _ConveyorTagToken = "CONVEYOR_XXX";
+        private const string _IBConnectionTagToken = "CONVEYOR_IB_CONNECTION";
+        private const string _OBConnectionTagToken = "CONVEYOR_OB_CONNECTION";
+        private const string _SE1TagToken = "CS_SE1_XXX";
+        private const string _SE2TagToken = "CS_SE2_XXX";
+        private const string _SMTagToken = "CS_SM_XXX";
+        private const string _SSTagToken = "CS_SS_XXX";
+        private const string _EPCTagToken = "EPC_XXX";
+
+        public L5XGenerator()
+        {
+            _DevicesProcessed = new List<string>();
+        }
 
         public void LoadL5XTemplate(string filePath)
         {
@@ -66,113 +80,65 @@ namespace RSGenerate
 
             return _OutputFileName;
         }
-        private string GetCellValue(DataRow row, string col)
-        {
-            return row[col].ToString().Replace('-','_');
-        }
 
         private void ProcessRow(DataRow row, XElement routinesNode)
         {
             //read config data from row
-            var conveyorNumber = GetCellValue(row, "Conveyor Number");
-            var inboundConnection = "CONVEYOR_" + GetCellValue(row, "IB Connection");
-            var outboundConnection = "CONVEYOR_" + GetCellValue(row, "OB Connection");
-            var targetRoutineName = GetCellValue(row, "Target Routine Name");
-            var motorTemplateRoutineName = GetCellValue(row, "Motor Control Template Routine");
-            string deviceName = null;
-
+            var conveyorNumber = ExcelHelper.GetCellValue(row, "Conveyor Number");
             if (string.IsNullOrEmpty(conveyorNumber))
                 return;
 
             conveyorNumber = "CONVEYOR_" + conveyorNumber;
             this.AddControllerTag(conveyorNumber, "FXG_CONVEYOR");
 
-            //Import Disconnect Fault Code
-            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", "CONVEYOR_XXX", conveyorNumber);
+            this.AddMotorRoutines(routinesNode, conveyorNumber, row);
+
+            this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
+
+            this.AddDeviceRoutine(routinesNode, row, "SM1", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SM2", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
+
+            this.AddDeviceRoutine(routinesNode, row, "SS1", "CS_SS", "FXG_CS_SS", "CS_SS", _SSTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SS2", "CS_SS", "FXG_CS_SS", "CS_SS", _SSTagToken);
+
+            this.AddDeviceRoutine(routinesNode, row, "EPC1", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "EPC2", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "EPC3", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
+
+
+        }
+
+        private void AddMotorRoutines(XElement routinesNode, string conveyorTagName, DataRow row)
+        {
+            //Add Disconnect Fault Code
+            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", _ConveyorTagToken, conveyorTagName);
 
             //Import Motor Overload Code
-            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", "CONVEYOR_XXX", conveyorNumber);
-
-            //Import SE Logic
-            deviceName =  GetCellValue(row, "SE1");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SE");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "SE2");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SE");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SE", "CS_SE", "CS_SE1_XXX", deviceName);
-            }
-
-            ////Import SM Logic
-            deviceName = GetCellValue(row, "SM1");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SM");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "SM2");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SM");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SM", "CS_SM", "CS_SM_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "SS1");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SS");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "SS2");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_SS");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_SS", "CS_SS", "CS_SS_XXX", deviceName);
-            }
-
-            ////Import S1 Logic
-            //if (!string.IsNullOrEmpty(GetCellValue(row, "S1")))
-            //    this.ImportSourceLadderRungs(routines, "FXG_CS_S1", "CS_S1", conveyorNumber, inboundConnection, outboundConnection, GetCellValue(row, "S1"));
-
-            deviceName = GetCellValue(row, "EPC1");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                //deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "EPC2");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                //deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
-            }
-
-            deviceName = GetCellValue(row, "EPC3");
-            if (!string.IsNullOrEmpty(deviceName))
-            {
-                //deviceName = "CS_" + deviceName;
-                this.AddControllerTag(deviceName, "CS_EPC");
-                this.ImportSourceLadderRungs(routinesNode, "FXG_CS_EPC", "CS_EPC", "EPC_XXX", deviceName);
-            }
+            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", _ConveyorTagToken, conveyorTagName);
 
             //Import Motor Control Code
-           // this.ImportSourceLadderRungs(routines, motorTemplateRoutineName, targetRoutineName, conveyorNumber, inboundConnection, outboundConnection, null);
+            var motorRoutine = ExcelHelper.GetCellValue(row, "Motor Control Template Routine");
+            var targetRoutineName = ExcelHelper.GetCellValue(row, "Target Routine Name");
+
+            var dict = new Dictionary<string, string>();
+            dict.Add(_IBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "IB Connection"));
+            dict.Add(_OBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "OB Connection"));
+            this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, dict);
+        }
+
+        private void AddDeviceRoutine(XElement routinesNode, DataRow row, string columnName, string tagDataType, string templateRoutineName, string targetRoutineName, string tagToken)
+        {
+            var deviceName = ExcelHelper.GetCellValue(row, columnName);
+            if (string.IsNullOrEmpty(deviceName))
+                return;
+
+            deviceName = "CS_" + deviceName;
+            if (_DevicesProcessed.Contains(deviceName))
+                return;
+
+            this.AddControllerTag(deviceName, tagDataType);
+            this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName);
         }
 
         private void AddControllerTag(string tagName, string dataType)
