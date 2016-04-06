@@ -83,5 +83,17 @@ namespace RSGenerate
                         new XAttribute("TagType", tagType)
                     );
         }
+
+        public static XElement CreateAliasTag(string tagName, string alias, string externalAccess = "Read/Write")
+        {
+
+            return new XElement("Tag",
+                        new XAttribute("AliasFor", alias),
+                        new XAttribute("ExternalAccess", externalAccess),
+                        new XAttribute("Name", tagName),
+                        new XAttribute("Radix", "Binary"),
+                        new XAttribute("TagType", "Alias")
+                    );
+        }
     }
 }

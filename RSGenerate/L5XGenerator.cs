@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -18,6 +19,8 @@ namespace RSGenerate
 
         private string _L5XTemplatePath;
         private string _OutputFileName;
+        private string _ControllerName;
+
         private List<string> _DevicesProcessed;
 
         private const string _SourceProgramName = "Templates"; //Name of the Logix Program that contains the Template Routines
@@ -29,6 +32,16 @@ namespace RSGenerate
         private const string _SMTagToken = "CS_SM_XXX";
         private const string _SSTagToken = "CS_SS_XXX";
         private const string _EPCTagToken = "EPC_XXX";
+        private const string _ControllerNameTemplate = "PLC_XXXX_MCP01_Rack0_Slot0";
+        private const string _SheetNameLayout = "System Layout";
+        private const string _SheetNameOverview = "System Overview";
+        private const string _SheetNameIODetails = "IO Details";
+
+        private const int _ColumnIndexLabel = 2;
+        private const int _ColumnIndexValue = 3;
+
+        private readonly string[] _ValidCardTypes = { "1756-IA16", "1756-OW16I" };
+
 
         public L5XGenerator()
         {
@@ -39,7 +52,7 @@ namespace RSGenerate
         {
             L5XTemplate = XDocument.Load(filePath);
             _L5XTemplatePath = System.IO.Path.GetDirectoryName(filePath);
-            _OutputFileName = _L5XTemplatePath + "\\GeneratedProject.L5X";
+            //_OutputFileName = _L5XTemplatePath + "\\GeneratedProject.L5X";
         }
 
         public void LoadXLSXDefinition(string filePath)
@@ -59,14 +72,15 @@ namespace RSGenerate
             if (ExcelSystemDefinition == null)
                 throw new ArgumentNullException("You must first specify a SystemDefinition prior to calling Generate()");
 
-            var reader = ExcelSystemDefinition;
-            reader.IsFirstRowAsColumnNames = true;
-            DataSet dataset = reader.AsDataSet();
-            string sheetName = "Sheet1";
+            this.ExcelSystemDefinition.IsFirstRowAsColumnNames = true;
+            DataSet dataset = this.ExcelSystemDefinition.AsDataSet();
+
+            SetControllerAttributes(dataset);
+
+            ConfigureIOData(dataset);
 
             var routines = XMLHelper.GetOrCreateRoutinesElement((XElement)this.L5XTemplate.FirstNode);
-
-            foreach (DataRow row in dataset.Tables[sheetName].Rows)
+            foreach (DataRow row in dataset.Tables[_SheetNameLayout].Rows)
                 this.ProcessRow(row, routines);
 
             //Remove the Template Program from the Target before saving
@@ -75,10 +89,122 @@ namespace RSGenerate
             //once all the routines are created and/or added to renumber them all sequentially
             this.ReNumberLadder(routines);
 
-            
+            _OutputFileName = _L5XTemplatePath + "\\" + _ControllerName + "_generated.L5X"; 
             this.L5XTemplate.Save(_OutputFileName);
 
             return _OutputFileName;
+        }
+
+        private void ConfigureIOData(DataSet dataset)
+        {
+            string currentRack = string.Empty;
+            string currentSlot = string.Empty;
+            string currentType = string.Empty;
+            string lastSlot = string.Empty;
+
+            var rows = dataset.Tables[_SheetNameIODetails].Rows;
+            int emptyRowCount = 0;
+
+            for (int currentRow = 0; currentRow < rows.Count; currentRow++)
+            {
+                var row = rows[currentRow];
+                currentType = row[0].ToString();
+                currentRack = row[1].ToString();
+                lastSlot = currentSlot;
+                currentSlot = row[2].ToString();
+
+                if (!_ValidCardTypes.Contains(currentType) || string.IsNullOrEmpty(currentType))
+                {
+                    emptyRowCount++;
+                    if (emptyRowCount >= 2) break;  //bail if there are more than 2 rows with no data - this signifies the end of the listing
+                    continue;
+                }
+
+                emptyRowCount = 0;
+
+                if (lastSlot != currentSlot)  //new Card
+                {
+                    var card = new IOCard
+                    {
+                        CardType = currentType,
+                        Module = currentSlot,
+                        Rack = currentRack
+                    };
+
+                    var endRow = currentRow + 16;
+                    for (int ioRow = currentRow; ioRow < endRow; ioRow++ )
+                    {
+                        row = rows[ioRow];
+                        card.Points.Add(new IOPoint
+                        {
+                            Bit = row[3].ToString(),
+                            Description = row[4].ToString()
+                        });
+
+                        currentRow = ioRow;
+                    }
+
+                    this.AddIOCardDetails(card);
+                }
+
+            }
+        }
+
+        private void AddIOCardDetails(IOCard card)
+        {
+            var rack = card.Rack.PadLeft(2, '0');
+            var module = card.Module.PadLeft(2, '0');
+
+            string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, "I");
+            var tag = this.AddControllerTag("IO_SLOT_R" + rack + "_S" + module, "DINT");
+            tag.Add(new XElement("Description", "IO Module Point Descriptions"));
+
+            var comments = new XElement("Comments");
+            foreach (var point in card.Points)
+            {
+                var comment = new XElement("Comment", new XAttribute("Operand", "." + point.Bit));
+                comment.SetValue(point.Description);
+                comments.Add(comment);
+            }
+            tag.Add(comments);
+
+
+        }
+        private void SetControllerAttributes(DataSet dataset)
+        {
+            //string controllerName = string.Empty;
+            string controllerDesc = string.Empty;
+            string siteNumber = string.Empty;
+            string procLocation = string.Empty;
+            foreach (DataRow row in dataset.Tables[_SheetNameOverview].Rows)
+            {
+                switch (row[_ColumnIndexLabel].ToString())
+                {
+                    case "Site Number":
+                        siteNumber = row[_ColumnIndexValue].ToString();
+                        break;
+                    case "Project Name":
+                        controllerDesc = row[_ColumnIndexValue].ToString() + Environment.NewLine + "MCS AUTOMATION" ;
+                        break;
+                    case "Processor Location":
+                        procLocation = row[_ColumnIndexValue].ToString();
+                        break;
+
+                }
+            }
+
+            _ControllerName = _ControllerNameTemplate.Replace("XXXX", siteNumber).Replace("MCP01", procLocation);
+
+            var contentNode = (XElement)this.L5XTemplate.FirstNode;
+            XMLHelper.GetAttribute(contentNode, "TargetName").SetValue(_ControllerName);
+
+            var controllerNode = XMLHelper.GetChildElement((XElement)contentNode, "Controller");
+            XMLHelper.GetAttribute(controllerNode, "Name").SetValue(_ControllerName);
+
+            var descNode = XMLHelper.GetChildElement((XElement)controllerNode, "Description");
+            if (descNode != null)
+                descNode.SetValue(controllerDesc);
+
         }
 
         private void ProcessRow(DataRow row, XElement routinesNode)
@@ -127,7 +253,7 @@ namespace RSGenerate
             this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, dict);
         }
 
-        private void AddDeviceRoutine(XElement routinesNode, DataRow row, string columnName, string tagDataType, string templateRoutineName, string targetRoutineName, string tagToken)
+        private void AddDeviceRoutine(XElement routinesNode, DataRow row, string columnName, string tagDataType, string templateRoutineName, string targetRoutineName, string tagToken, Dictionary<string, string> replaceTags = null)
         {
             var deviceName = ExcelHelper.GetCellValue(row, columnName);
             if (string.IsNullOrEmpty(deviceName))
@@ -138,13 +264,21 @@ namespace RSGenerate
                 return;
 
             this.AddControllerTag(deviceName, tagDataType);
-            this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName);
+            this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName, replaceTags);
         }
 
-        private void AddControllerTag(string tagName, string dataType)
+        private XElement AddControllerTag(string tagName, string dataType)
         {
             var tagNode = XMLHelper.CreateTag(tagName, dataType);
             this.L5XTemplate.Descendants("Controller").FirstOrDefault().Element("Tags").Add(tagNode);
+            return tagNode;
+        }
+
+        private XElement AddAliasControllerTag(string tagName, string alias)
+        {
+            var tagNode = XMLHelper.CreateAliasTag(tagName, alias);
+            this.L5XTemplate.Descendants("Controller").FirstOrDefault().Element("Tags").Add(tagNode);
+            return tagNode;
         }
 
         private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null)
