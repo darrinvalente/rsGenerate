@@ -52,7 +52,6 @@ namespace RSGenerate
         {
             L5XTemplate = XDocument.Load(filePath);
             _L5XTemplatePath = System.IO.Path.GetDirectoryName(filePath);
-            //_OutputFileName = _L5XTemplatePath + "\\GeneratedProject.L5X";
         }
 
         public void LoadXLSXDefinition(string filePath)
@@ -77,9 +76,10 @@ namespace RSGenerate
 
             SetControllerAttributes(dataset);
 
-            ConfigureIOData(dataset);
-
             var routines = XMLHelper.GetOrCreateRoutinesElement((XElement)this.L5XTemplate.FirstNode);
+
+            ConfigureIOData(dataset, routines);
+
             foreach (DataRow row in dataset.Tables[_SheetNameLayout].Rows)
                 this.ProcessRow(row, routines);
 
@@ -95,7 +95,7 @@ namespace RSGenerate
             return _OutputFileName;
         }
 
-        private void ConfigureIOData(DataSet dataset)
+        private void ConfigureIOData(DataSet dataset, XElement routines)
         {
             string currentRack = string.Empty;
             string currentSlot = string.Empty;
@@ -104,6 +104,9 @@ namespace RSGenerate
 
             var rows = dataset.Tables[_SheetNameIODetails].Rows;
             int emptyRowCount = 0;
+
+            var routineMcpMap = XMLHelper.GetOrCreateRoutineWithName(routines, "IO_MAP_MCP");
+            var routineFieldMap = XMLHelper.GetOrCreateRoutineWithName(routines, "IO_MAP_FIELD");
 
             for (int currentRow = 0; currentRow < rows.Count; currentRow++)
             {
@@ -138,15 +141,62 @@ namespace RSGenerate
                         card.Points.Add(new IOPoint
                         {
                             Bit = row[3].ToString(),
-                            Description = row[4].ToString()
+                            Description = row[4].ToString(), 
+                            DeviceTag = row[5].ToString(),
+                            Member = row[6].ToString()
                         });
 
                         currentRow = ioRow;
                     }
 
                     this.AddIOCardDetails(card);
+                    this.CreateIOMappings(routineMcpMap, card);
                 }
 
+            }
+        }
+
+        private void CreateIOMappings(XElement routine, IOCard card)
+        {
+
+            if (card.Points.All(p => string.IsNullOrEmpty(p.Member)))
+                return;
+
+
+            string cardComment =
+@"********************************************************************************************************************************************************************************************************
+{RACK_NUMBER}
+{SLOT_NUMBER}
+********************************************************************************************************************************************************************************************************";
+
+            var rack = card.Rack.PadLeft(2, '0');
+            var module = card.Module.PadLeft(2, '0');
+
+            cardComment = cardComment.Replace("{RACK_NUMBER}", "RACK " + rack);
+            cardComment = cardComment.Replace("{SLOT_NUMBER}", "SLOT " + module);
+
+            var rungs = routine.Element("RLLContent");
+            var commentRung = new XElement("Rung", new XAttribute("Number", "0"), new XAttribute("Type", "N"));
+            commentRung.Add(new XElement("Comment", cardComment));
+            commentRung.Add(new XElement("Text", "NOP();"));
+            rungs.Add(commentRung);
+
+            foreach (var point in card.Points)
+            {
+                if (string.IsNullOrEmpty(point.Member))
+                    continue;
+
+               
+                var destTag = point.DeviceTag + "." + point.Member;
+                var sourceTag = "IO_SLOT_R" + rack + "_S" + module + "." + point.Bit;
+                var mapRung = new XElement("Rung", new XAttribute("Number", "0"), new XAttribute("Type", "N"));
+
+                if (card.CardType.Contains("IA"))
+                    mapRung.Add(new XElement("Text",string.Format("XIC({0})OTE({1});", sourceTag, destTag)));
+                else if (card.CardType.Contains("OW"))
+                    mapRung.Add(new XElement("Text", string.Format("XIC({0})OTE({1});", destTag, sourceTag)));
+
+                rungs.Add(mapRung);
             }
         }
 
@@ -155,7 +205,9 @@ namespace RSGenerate
             var rack = card.Rack.PadLeft(2, '0');
             var module = card.Module.PadLeft(2, '0');
 
-            string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, "I");
+            //we may auto-alias this - but for now we are not b/c the IO Tree will not be created and you can't go online to create the IO Tree with unresolveable references.
+            //string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, "I");  
+
             var tag = this.AddControllerTag("IO_SLOT_R" + rack + "_S" + module, "DINT");
             tag.Add(new XElement("Description", "IO Module Point Descriptions"));
 
@@ -354,6 +406,7 @@ namespace RSGenerate
                 }
             }
         }
+
     }
 
 }

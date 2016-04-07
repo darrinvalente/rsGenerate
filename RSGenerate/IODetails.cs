@@ -10,6 +10,8 @@ namespace RSGenerate
     {
         public string Bit { get; set; }
         public string Description { get; set; }
+        public string DeviceTag { get; set; }
+        public string Member { get; set; }
     }
 
     class IOCard
