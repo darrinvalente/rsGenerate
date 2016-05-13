@@ -19,5 +19,15 @@ namespace RSGenerate
             else
                 return value;
         }
+
+        public static string GetCellValue(DataRow row, int colIndex, bool sanitize = true)
+        {
+            var value = row[colIndex].ToString();
+
+            if (sanitize)
+                return value.Replace('-', '_');
+            else
+                return value;
+        }
     }
 }

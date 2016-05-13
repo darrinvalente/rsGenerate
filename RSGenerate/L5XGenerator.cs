@@ -27,6 +27,7 @@ namespace RSGenerate
         private const string _ConveyorTagToken = "CONVEYOR_XXX";
         private const string _IBConnectionTagToken = "CONVEYOR_IB_CONNECTION";
         private const string _OBConnectionTagToken = "CONVEYOR_OB_CONNECTION";
+        private const string _S1TagToken = "CS_S1_XXX";
         private const string _SE1TagToken = "CS_SE1_XXX";
         private const string _SE2TagToken = "CS_SE2_XXX";
         private const string _SMTagToken = "CS_SM_XXX";
@@ -262,17 +263,48 @@ namespace RSGenerate
         private void ProcessRow(DataRow row, XElement routinesNode)
         {
             //read config data from row
-            var conveyorNumber = ExcelHelper.GetCellValue(row, "Conveyor Number");
-            if (string.IsNullOrEmpty(conveyorNumber))
+            var deviceNumber = ExcelHelper.GetCellValue(row, "Device Number");
+            var deviceType = ExcelHelper.GetCellValue(row, "Device Type");
+            string deviceName;
+
+            if (string.IsNullOrEmpty(deviceNumber))
                 return;
 
-            conveyorNumber = "CONVEYOR_" + conveyorNumber;
-            this.AddControllerTag(conveyorNumber, "FXG_CONVEYOR");
+            switch (deviceType)
+            {
+                case "Conveyor":
+                    deviceName = "CONVEYOR_" + deviceNumber;
+                    this.AddControllerTag(deviceName, "FXG_CONVEYOR");
+                    this.AddMotorRoutines(routinesNode, deviceName, row);
+                    break;
 
-            this.AddMotorRoutines(routinesNode, conveyorNumber, row);
+                case "Tip Chute":
+                    deviceName = "TIP_CHUTE_" + deviceNumber;
+                    this.AddControllerTag(deviceName, "TIP_CHUTE");
+                    break;
+
+                case "Shuttle Chute":
+                    deviceName = "SHUTTLE_CHUTE_" + deviceNumber;
+                    this.AddControllerTag(deviceName, "SHUTTLE_CHUTE");
+                    break;
+
+                case "Gate":
+                    deviceName = "GATE_" + deviceNumber;
+                    //this.AddControllerTag(deviceName, "GATE");
+                    break;
+            }
+                 
+            if (deviceType == "Conveyor")
+            {
+
+
+            }
+
 
             this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
             this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
+
+            this.AddDeviceRoutine(routinesNode, row, "S1", "CS_S1", "FXG_CS_S1", "CS_S1", _S1TagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "SM1", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
             this.AddDeviceRoutine(routinesNode, row, "SM2", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
@@ -283,7 +315,6 @@ namespace RSGenerate
             this.AddDeviceRoutine(routinesNode, row, "EPC1", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
             this.AddDeviceRoutine(routinesNode, row, "EPC2", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
             this.AddDeviceRoutine(routinesNode, row, "EPC3", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
-
 
         }
 
@@ -302,6 +333,15 @@ namespace RSGenerate
             var dict = new Dictionary<string, string>();
             dict.Add(_IBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "IB Connection"));
             dict.Add(_OBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "OB Connection"));
+            for (int i = 9; i<18; i++)
+            {
+                if (!string.IsNullOrEmpty(row[i].ToString()))
+                {
+                    var columnName = row.Table.Columns[i].ColumnName;
+                    var tagName = "CS_" + columnName + "_XXX";
+                    dict.Add(tagName, "CS_" + ExcelHelper.GetCellValue(row, i));
+                }
+            }
             this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, dict);
         }
 
@@ -316,6 +356,20 @@ namespace RSGenerate
                 return;
 
             this.AddControllerTag(deviceName, tagDataType);
+
+            if (replaceTags == null)
+                replaceTags = new Dictionary<string, string>();
+
+            for (int i = 9; i < 18; i++)
+            {
+                if (!string.IsNullOrEmpty(row[i].ToString()))
+                {
+                    var col = row.Table.Columns[i].ColumnName;
+                    var tagName = "CS_" + col + "_XXX";
+                    if (!replaceTags.ContainsKey(tagName))
+                        replaceTags.Add(tagName, "CS_" + ExcelHelper.GetCellValue(row, i));
+                }
+            }
             this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName, replaceTags);
         }
 
