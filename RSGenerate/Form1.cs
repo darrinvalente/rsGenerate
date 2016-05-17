@@ -28,7 +28,7 @@ namespace RSGenerate
         private void btnChooseTemplate_Click(object sender, EventArgs e)
         {
             openFileDialog1.FileName = string.Empty;
-            openFileDialog1.InitialDirectory = "Z:\\OneDrive\\RSLogix Code\\Code Generation\\Baseline";   //CHANGE THIS HARDCODED PATH
+            openFileDialog1.InitialDirectory = "Z:\\SharePoint\\AI STRAT - Documents\\PLC\\Code Generation";   //CHANGE THIS HARDCODED PATH
             openFileDialog1.Filter = "RSLogix Export Files (.L5X)|*.L5X|All Files (*.*)|*.*";
             openFileDialog1.FilterIndex = 1;
             openFileDialog1.Multiselect = false;
@@ -73,7 +73,7 @@ namespace RSGenerate
         private void btnChooseDefinition_Click(object sender, EventArgs e)
         {
             openFileDialog1.FileName = string.Empty;
-            openFileDialog1.InitialDirectory = "Z:\\OneDrive\\RSLogix Code\\Code Generation\\Sample Projects";   //CHANGE THIS HARDCODED PATH
+            openFileDialog1.InitialDirectory = "Z:\\SharePoint\\AI STRAT - Documents\\PLC\\Code Generation";   //CHANGE THIS HARDCODED PATH
             openFileDialog1.Filter = "Excel Files (.xlsx)|*.xlsx|All Files (*.*)|*.*";
             openFileDialog1.FilterIndex = 1;
             openFileDialog1.Multiselect = false;

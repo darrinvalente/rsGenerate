@@ -30,6 +30,7 @@ namespace RSGenerate
         private const string _S1TagToken = "CS_S1_XXX";
         private const string _SE1TagToken = "CS_SE1_XXX";
         private const string _SE2TagToken = "CS_SE2_XXX";
+        private const string _SE3TagToken = "CS_SE3_XXX";
         private const string _SMTagToken = "CS_SM_XXX";
         private const string _SSTagToken = "CS_SS_XXX";
         private const string _EPCTagToken = "EPC_XXX";
@@ -201,15 +202,20 @@ namespace RSGenerate
             }
         }
 
-        private void AddIOCardDetails(IOCard card)
+        private void AddIOCardDetails(IOCard card, bool autoAlias = true)
         {
             var rack = card.Rack.PadLeft(2, '0');
             var module = card.Module.PadLeft(2, '0');
+            var type = card.CardType == "1756-IA16" ? "I" : "O";
+            XElement tag = null;
 
-            //we may auto-alias this - but for now we are not b/c the IO Tree will not be created and you can't go online to create the IO Tree with unresolveable references.
-            //string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, "I");  
+            if (autoAlias)
+            {            
+                //we may auto-alias this - but for now we are not b/c the IO Tree will not be created and you can't go online to create the IO Tree with unresolveable references.
+                string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, type);
+                tag = this.AddAliasControllerTag("IO_SLOT_R" + rack + "_S" + module, alias);
+            }
 
-            var tag = this.AddControllerTag("IO_SLOT_R" + rack + "_S" + module, "DINT");
             tag.Add(new XElement("Description", "IO Module Point Descriptions"));
 
             var comments = new XElement("Comments");
@@ -290,7 +296,7 @@ namespace RSGenerate
 
                 case "Gate":
                     deviceName = "GATE_" + deviceNumber;
-                    //this.AddControllerTag(deviceName, "GATE");
+                    this.AddControllerTag(deviceName, "GATE");
                     break;
             }
                  
@@ -303,6 +309,7 @@ namespace RSGenerate
 
             this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
             this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SE3", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "S1", "CS_S1", "FXG_CS_S1", "CS_S1", _S1TagToken);
 
