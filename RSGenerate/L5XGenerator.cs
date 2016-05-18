@@ -300,15 +300,19 @@ namespace RSGenerate
                     break;
             }
                  
-            if (deviceType == "Conveyor")
+            //Special handling for SE stations
+            //If there is both an SE1 and an SE2 station listed, assume they work in pairs and use the _DUAL version of 
+            if (!string.IsNullOrEmpty(ExcelHelper.GetCellValue(row, "SE1")) && !string.IsNullOrEmpty(ExcelHelper.GetCellValue(row, "SE2")))
             {
-
-
+                this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE_DUAL", "CS_SE", _SE1TagToken);
+                this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE_DUAL", "CS_SE", _SE1TagToken);
+            }
+            else
+            {
+                this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE_SINGLE", "CS_SE", _SE1TagToken);
+                this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE_SINGLE", "CS_SE", _SE1TagToken);
             }
 
-
-            this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
-            this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
             this.AddDeviceRoutine(routinesNode, row, "SE3", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "S1", "CS_S1", "FXG_CS_S1", "CS_S1", _S1TagToken);
@@ -337,19 +341,11 @@ namespace RSGenerate
             var motorRoutine = ExcelHelper.GetCellValue(row, "Motor Control Template Routine");
             var targetRoutineName = ExcelHelper.GetCellValue(row, "Target Routine Name");
 
-            var dict = new Dictionary<string, string>();
-            dict.Add(_IBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "IB Connection"));
-            dict.Add(_OBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "OB Connection"));
-            for (int i = 9; i<18; i++)
-            {
-                if (!string.IsNullOrEmpty(row[i].ToString()))
-                {
-                    var columnName = row.Table.Columns[i].ColumnName;
-                    var tagName = "CS_" + columnName + "_XXX";
-                    dict.Add(tagName, "CS_" + ExcelHelper.GetCellValue(row, i));
-                }
-            }
-            this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, dict);
+            var replaceTags = EnumerateTags(row, null);
+            replaceTags.Add(_IBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "IB Connection"));
+            replaceTags.Add(_OBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "OB Connection"));
+
+            this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, replaceTags);
         }
 
         private void AddDeviceRoutine(XElement routinesNode, DataRow row, string columnName, string tagDataType, string templateRoutineName, string targetRoutineName, string tagToken, Dictionary<string, string> replaceTags = null)
@@ -362,24 +358,48 @@ namespace RSGenerate
             if (_DevicesProcessed.Contains(deviceName))
                 return;
 
+            _DevicesProcessed.Add(deviceName);
+
             this.AddControllerTag(deviceName, tagDataType);
+
+            replaceTags = EnumerateTags(row, replaceTags);
+                
+            this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName, replaceTags);
+        }
+
+        private Dictionary<string, string> EnumerateTags(DataRow row, Dictionary<string, string> replaceTags)
+        {
+            Debug.Print("Processing row " + row["Device Number"].ToString());
 
             if (replaceTags == null)
                 replaceTags = new Dictionary<string, string>();
 
-            for (int i = 9; i < 18; i++)
+            for (int i = 12; i <= 23; i++)
             {
                 if (!string.IsNullOrEmpty(row[i].ToString()))
                 {
-                    var col = row.Table.Columns[i].ColumnName;
-                    var tagName = "CS_" + col + "_XXX";
+                    var col = row.Table.Columns[i].ColumnName.Trim();
+                    string tagName = string.Empty;
+                    string tagValue = string.Empty;
+
+                    if (col == "TIP_CHUTE")
+                    {
+                        tagName = "CHUTE_XXX";
+                        tagValue = ExcelHelper.GetCellValue(row, i);
+                    }
+                    else
+                    {
+                        tagName = "CS_" + col + "_XXX";
+                        tagValue = "CS_" + ExcelHelper.GetCellValue(row, i);
+                    }
+
+
                     if (!replaceTags.ContainsKey(tagName))
-                        replaceTags.Add(tagName, "CS_" + ExcelHelper.GetCellValue(row, i));
+                        replaceTags.Add(tagName, tagValue);
                 }
             }
-            this.ImportSourceLadderRungs(routinesNode, templateRoutineName, targetRoutineName, tagToken, deviceName, replaceTags);
+            return replaceTags;
         }
-
         private XElement AddControllerTag(string tagName, string dataType)
         {
             var tagNode = XMLHelper.CreateTag(tagName, dataType);
