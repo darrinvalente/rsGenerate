@@ -22,6 +22,7 @@ namespace RSGenerate
         private string _ControllerName;
 
         private List<string> _DevicesProcessed;
+        private List<string> _RoutinesAdded;
 
         private const string _SourceProgramName = "Templates"; //Name of the Logix Program that contains the Template Routines
         private const string _ConveyorTagToken = "CONVEYOR_XXX";
@@ -107,8 +108,7 @@ namespace RSGenerate
             var rows = dataset.Tables[_SheetNameIODetails].Rows;
             int emptyRowCount = 0;
 
-            var routineMcpMap = XMLHelper.GetOrCreateRoutineWithName(routines, "IO_MAP_MCP");
-            var routineFieldMap = XMLHelper.GetOrCreateRoutineWithName(routines, "IO_MAP_FIELD");
+            
 
             for (int currentRow = 0; currentRow < rows.Count; currentRow++)
             {
@@ -118,6 +118,10 @@ namespace RSGenerate
                 lastSlot = currentSlot;
                 currentSlot = row[2].ToString();
 
+                var routineName = "IO_MAP";  // Default Routine name - used if nothing is specified in each row.
+                if (!string.IsNullOrEmpty(row["Map Routine"].ToString()))
+                    routineName = row["Map Routine"].ToString();
+                
                 if (!_ValidCardTypes.Contains(currentType) || string.IsNullOrEmpty(currentType))
                 {
                     emptyRowCount++;
@@ -152,7 +156,8 @@ namespace RSGenerate
                     }
 
                     this.AddIOCardDetails(card);
-                    this.CreateIOMappings(routineMcpMap, card);
+                    var routine = XMLHelper.GetOrCreateRoutineWithName(routines, routineName);
+                    this.CreateIOMappings(routine, card);
                 }
 
             }
