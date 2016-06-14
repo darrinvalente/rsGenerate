@@ -185,19 +185,26 @@ namespace RSGenerate
 
             foreach (var point in card.Points)
             {
-                if (string.IsNullOrEmpty(point.Member))
-                    continue;
-
-               
-                var destTag = point.DeviceTag + "." + point.Member;
+                var destTag = string.Empty;
                 var sourceTag = "IO_SLOT_R" + rack + "_S" + module + "." + point.Bit;
                 var mapRung = new XElement("Rung", new XAttribute("Number", "0"), new XAttribute("Type", "N"));
+                
+                var nopInputMap = "XIC({0})NOP({1});"; 
+                var nopOutputMap = "NOP({0})OTE({1});";
+                var ioMap = "XIC({0})OTE({1});";  
 
-                if (card.CardType.Contains("IA"))
-                    mapRung.Add(new XElement("Text",string.Format("XIC({0})OTE({1});", sourceTag, destTag)));
-                else if (card.CardType.Contains("OW"))
-                    mapRung.Add(new XElement("Text", string.Format("XIC({0})OTE({1});", destTag, sourceTag)));
+                var expression = string.Empty;
 
+                if (!string.IsNullOrEmpty(point.Member) && !string.IsNullOrEmpty(point.DeviceTag))
+                    destTag = point.DeviceTag + "." + point.Member;
+
+
+                if (card.CardType.Contains("IA"))  //Input Card
+                    expression = string.Format(string.IsNullOrEmpty(destTag) ? nopInputMap : ioMap, sourceTag, destTag);
+                else if (card.CardType.Contains("OW"))  //Output Card
+                    expression = string.Format(string.IsNullOrEmpty(destTag) ? nopOutputMap : ioMap, destTag, sourceTag);
+
+                mapRung.Add(new XElement("Text", expression));
                 rungs.Add(mapRung);
             }
         }
