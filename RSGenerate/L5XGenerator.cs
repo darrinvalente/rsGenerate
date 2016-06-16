@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
@@ -35,6 +36,10 @@ namespace RSGenerate
         private const string _SMTagToken = "CS_SM_XXX";
         private const string _SSTagToken = "CS_SS_XXX";
         private const string _EPCTagToken = "EPC_XXX";
+        private const string _PETagToken = "PE_XXX";
+        private const string _TipChuteTagToken = "TIP_CHUTE_XXX";
+        private const string _ShuttleChuteTagToken = "SHUTTLE_CHUTE_XXX";
+        private const string _GateTagToken = "GATE_XXX";
         private const string _ControllerNameTemplate = "PLC_XXXX_MCP01_Rack0_Slot0";
         private const string _SheetNameLayout = "System Layout";
         private const string _SheetNameOverview = "System Overview";
@@ -293,27 +298,34 @@ namespace RSGenerate
                 case "Conveyor":
                     deviceName = "CONVEYOR_" + deviceNumber;
                     this.AddControllerTag(deviceName, "FXG_CONVEYOR");
-                    this.AddMotorRoutines(routinesNode, deviceName, row);
+                    this.AddMotorLogic(routinesNode, deviceName, row);
+                    //Add Disconnect Fault Code
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", _ConveyorTagToken, deviceName);
+                    //Import Motor Overload Code
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", _ConveyorTagToken, deviceName);
                     break;
 
                 case "Tip Chute":
                     deviceName = "TIP_CHUTE_" + deviceNumber;
                     this.AddControllerTag(deviceName, "TIP_CHUTE");
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_TIP_CHUTE", "TIP_CHUTES", _TipChuteTagToken, deviceName);
                     break;
 
                 case "Shuttle Chute":
                     deviceName = "SHUTTLE_CHUTE_" + deviceNumber;
                     this.AddControllerTag(deviceName, "SHUTTLE_CHUTE");
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_SHUTTLE_CHUTE", "SHUTTLE_CHUTES", _ShuttleChuteTagToken, deviceName);
                     break;
 
                 case "Gate":
                     deviceName = "GATE_" + deviceNumber;
                     this.AddControllerTag(deviceName, "GATE");
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_GATE", "GATES", _GateTagToken, deviceName);
                     break;
             }
                  
             //Special handling for SE stations
-            //If there is both an SE1 and an SE2 station listed, assume they work in pairs and use the _DUAL version of 
+            //If there is both an SE1 and an SE2 station listed, assume they work in pairs and use the _DUAL version of the template
             if (!string.IsNullOrEmpty(ExcelHelper.GetCellValue(row, "SE1")) && !string.IsNullOrEmpty(ExcelHelper.GetCellValue(row, "SE2")))
             {
                 this.AddDeviceRoutine(routinesNode, row, "SE1", "CS_SE", "FXG_CS_SE_DUAL", "CS_SE", _SE1TagToken);
@@ -339,25 +351,78 @@ namespace RSGenerate
             this.AddDeviceRoutine(routinesNode, row, "EPC2", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
             this.AddDeviceRoutine(routinesNode, row, "EPC3", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
 
+            this.AddDeviceRoutine(routinesNode, row, "PE", "PE", "FXG_PE", "PE", _PETagToken);
+
         }
 
-        private void AddMotorRoutines(XElement routinesNode, string conveyorTagName, DataRow row)
+        private void AddMotorLogic(XElement routinesNode, string conveyorTagName, DataRow row)
         {
-            //Add Disconnect Fault Code
-            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", _ConveyorTagToken, conveyorTagName);
+            string ibInterlockExpression = "XIC(SYSTEM.IB_MODE)XIC(CONVEYOR_IB_CONNECTION.RUN_INTERLOCK_READY)";
+            string obInterlockExpression = "XIC(SYSTEM.OB_MODE)XIC(CONVEYOR_OB_CONNECTION.RUN_INTERLOCK_READY)";
+            string fwdInterlockCoilExpression = "OTE(CONVEYOR_XXX.RUN_FWD_INTERLOCK_READY);";
+            string revInterlockCoilExpression = "OTE(CONVEYOR_XXX.RUN_REV_INTERLOCK_READY);";
 
-            //Import Motor Overload Code
-            this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", _ConveyorTagToken, conveyorTagName);
+            string ibUsedInModeExpression = "XIC(SYSTEM.IB_MODE)";
+            string obUsedInModeExpression = "XIC(SYSTEM.OB_MODE)";
+            string usedInModeCoilExpression = "OTE(CONVEYOR_XXX.USED_IN_MODE);";
 
-            //Import Motor Control Code
-            var motorRoutine = ExcelHelper.GetCellValue(row, "Motor Control Template Routine");
-            var targetRoutineName = ExcelHelper.GetCellValue(row, "Target Routine Name");
+            //extract motor info from sheet
+            bool inbound = ExcelHelper.GetCellValue(row, "Inbound").ToUpper() == "X";
+            bool outbound = ExcelHelper.GetCellValue(row, "Outbound").ToUpper() == "X";
+            bool reversing = ExcelHelper.GetCellValue(row, "Reversing").ToUpper() == "X";
+            string ibConnection = ExcelHelper.GetCellValue(row, "IB Connection");
+            string obConnection = ExcelHelper.GetCellValue(row, "OB Connection");
+            string motorRoutine = ExcelHelper.GetCellValue(row, "Motor Control Template Routine");
+            string targetRoutineName = ExcelHelper.GetCellValue(row, "Target Routine Name");
 
+            //Set up special case Tag Name replacements - this is passed to import routine
             var replaceTags = EnumerateTags(row, null);
-            replaceTags.Add(_IBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "IB Connection"));
-            replaceTags.Add(_OBConnectionTagToken, "CONVEYOR_" + ExcelHelper.GetCellValue(row, "OB Connection"));
+            replaceTags.Add(_IBConnectionTagToken, "CONVEYOR_" + ibConnection);
+            replaceTags.Add(_OBConnectionTagToken, "CONVEYOR_" + obConnection);
 
-            this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, replaceTags);
+            //set up special case Logic replacements - this is passed to import routine.
+            var customLogicList = new Dictionary<string, string>();
+
+            string fwdInterlockExpression = string.Empty;
+            string revInterlockExpression = string.Empty;
+            string usedInModeExpression = string.Empty;
+
+
+            if (ibConnection.ToUpper() == "END")
+                ibInterlockExpression = "XIC(SYSTEM.IB_MODE)";
+
+            if (obConnection.ToUpper() == "END")
+                obInterlockExpression = "XIC(SYSTEM.OB_MODE)";
+
+            if (inbound && outbound)
+            {
+                if (reversing)
+                {
+                    fwdInterlockExpression = ibInterlockExpression + fwdInterlockCoilExpression;
+                    revInterlockExpression = obInterlockExpression + revInterlockCoilExpression;
+                }
+                else
+                    fwdInterlockExpression = "[" + ibInterlockExpression + "," + obInterlockExpression + "]" + fwdInterlockCoilExpression;
+
+                usedInModeExpression = "[" + ibUsedInModeExpression + "," + obUsedInModeExpression + "]" + usedInModeCoilExpression;
+            }
+            else if (inbound)
+            {
+                fwdInterlockExpression = ibInterlockExpression + fwdInterlockCoilExpression;
+                usedInModeExpression = ibUsedInModeExpression + usedInModeCoilExpression;
+            }
+            else if (outbound)
+            {
+                fwdInterlockExpression = obInterlockExpression + fwdInterlockCoilExpression;
+                usedInModeExpression = obUsedInModeExpression + usedInModeCoilExpression;
+            }
+
+            customLogicList.Add("{{RUN_FWD_INTERLOCK_READY}}", fwdInterlockExpression);
+            customLogicList.Add("{{RUN_REV_INTERLOCK_READY}}", revInterlockExpression);
+            customLogicList.Add("{{USED_IN_MODE}}", usedInModeExpression);
+
+
+            this.ImportSourceLadderRungs(routinesNode, motorRoutine, targetRoutineName, _ConveyorTagToken, conveyorTagName, replaceTags, customLogicList);
         }
 
         private void AddDeviceRoutine(XElement routinesNode, DataRow row, string columnName, string tagDataType, string templateRoutineName, string targetRoutineName, string tagToken, Dictionary<string, string> replaceTags = null)
@@ -366,7 +431,9 @@ namespace RSGenerate
             if (string.IsNullOrEmpty(deviceName))
                 return;
 
-            deviceName = "CS_" + deviceName;
+            if (!deviceName.StartsWith("PE"))
+                deviceName = "CS_" + deviceName;
+
             if (_DevicesProcessed.Contains(deviceName))
                 return;
 
@@ -386,7 +453,7 @@ namespace RSGenerate
             if (replaceTags == null)
                 replaceTags = new Dictionary<string, string>();
 
-            for (int i = 12; i <= 23; i++)
+            for (int i = 12; i <= 24; i++)
             {
                 if (!string.IsNullOrEmpty(row[i].ToString()))
                 {
@@ -426,7 +493,7 @@ namespace RSGenerate
             return tagNode;
         }
 
-        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null)
+        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null, Dictionary<string, string> customRungText = null)
         {
 
             //first we clone the ladder rungs from the Source Template that is specified
@@ -440,14 +507,28 @@ namespace RSGenerate
             //Perform Tag Replacement in ladder text
             foreach (var rung in sourceRungs)
             {
+                foreach (var item in customRungText ?? new Dictionary<string, string>())
+                {
+                    var comment = XMLHelper.GetChildElement(rung, "Comment");
+                    var text = XMLHelper.GetChildElement(rung, "Text");
+                    if (comment != null && text != null && comment.Value.Contains(item.Key))
+                    {
+                        //replace logic
+                        text.Value = item.Value;
+                        //sanitize comment
+                        comment.Value = Regex.Replace(comment.Value, "{{.*?}}", "");
+                    }
+                }
+
                 //replace main tag for routine
                 this.ReplaceTagMembers(rung, sourceTagName, targetTagName);
+
+                foreach (var item in additionalTagReplacements ?? new Dictionary<string, string>())
+                    this.ReplaceTagMembers(rung, item.Key, item.Value);
 
                 //update device name in comments using token {DEVICE_NUMBER}
                 this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", targetTagName);
 
-                foreach (var item in additionalTagReplacements ?? new Dictionary<string, string>())
-                    this.ReplaceTagMembers(rung, item.Key, item.Value);
             }
 
             //Find the Right PLC Routine in Target
