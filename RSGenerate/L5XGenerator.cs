@@ -54,6 +54,7 @@ namespace RSGenerate
         public L5XGenerator()
         {
             _DevicesProcessed = new List<string>();
+            _RoutinesAdded = new List<string>();
         }
 
         public void LoadL5XTemplate(string filePath)
@@ -229,7 +230,7 @@ namespace RSGenerate
             if (autoAlias)
             {            
                 //we may auto-alias this - but for now we are not b/c the IO Tree will not be created and you can't go online to create the IO Tree with unresolveable references.
-                string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "RACK_" + rack, card.Module, type);
+                string alias = string.Format("{0}:{1}:{2}.Data", rack == "00" ? "Local" : "ENET_RACK_" + rack, card.Module, type);
                 tag = this.AddAliasControllerTag("IO_SLOT_R" + rack + "_S" + module, alias);
             }
 
@@ -288,6 +289,7 @@ namespace RSGenerate
             //read config data from row
             var deviceNumber = ExcelHelper.GetCellValue(row, "Device Number");
             var deviceType = ExcelHelper.GetCellValue(row, "Device Type");
+            bool isVFD = ExcelHelper.GetCellValue(row, "VFD").ToUpper() == "X"; 
             string deviceName;
 
             if (string.IsNullOrEmpty(deviceNumber))
@@ -302,7 +304,7 @@ namespace RSGenerate
                     //Add Disconnect Fault Code
                     this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_DISC", "MOTOR_DISC", _ConveyorTagToken, deviceName);
                     //Import Motor Overload Code
-                    this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD", "MOTOR_OVLD", _ConveyorTagToken, deviceName);
+                    this.ImportSourceLadderRungs(routinesNode, "FXG_MOTOR_OVLD" + (isVFD ? "_VFD" : ""), "MOTOR_OVLD", _ConveyorTagToken, deviceName);
                     break;
 
                 case "Tip Chute":
@@ -493,7 +495,7 @@ namespace RSGenerate
             return tagNode;
         }
 
-        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null, Dictionary<string, string> customRungText = null)
+        private void ImportSourceLadderRungs(XElement routines, string sourceRountineName, string targetRoutineName, string sourceTagName, string targetTagName, Dictionary<string, string> additionalTagReplacements = null, Dictionary<string, string> customRungText = null, bool ensureInMainroutineScanList = true)
         {
 
             //first we clone the ladder rungs from the Source Template that is specified
@@ -530,16 +532,24 @@ namespace RSGenerate
                 this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", targetTagName);
 
             }
+           
+            XMLHelper.AddSourceRungsToTargetRoutine(sourceRungs, routines, targetRoutineName);
 
-            //Find the Right PLC Routine in Target
-            var targetRoutine = XMLHelper.GetOrCreateRoutineWithName(routines, targetRoutineName);
+            if (ensureInMainroutineScanList)
+                EnsureRoutineInMainRoutineScanList(routines, targetRoutineName);
+        }
 
-            //Add Source Ladder Logic to Target Routine
-            var targetRungs = targetRoutine.Descendants("Rung");
-            if (targetRungs != null && targetRungs.Count() > 0)
-                targetRungs.LastOrDefault().AddAfterSelf(sourceRungs); //add to end
-            else
-                targetRoutine.Descendants("RLLContent").LastOrDefault().Add(sourceRungs);
+        private void EnsureRoutineInMainRoutineScanList(XElement routines, string targetRoutineName)
+        {
+            if (_RoutinesAdded.Contains(targetRoutineName))
+                return;
+
+            string rungText = string.Format("JSR({0},0);", targetRoutineName);
+
+            var sourceRungs = new List<XElement>();
+            sourceRungs.Add(XMLHelper.CreateRung(rungText));
+            XMLHelper.AddSourceRungsToTargetRoutine(sourceRungs, routines, "MainRoutine");
+            _RoutinesAdded.Add(targetRoutineName);
         }
 
         private IEnumerable<XElement> GetSourceRungs(string programName, string routineName)

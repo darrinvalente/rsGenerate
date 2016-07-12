@@ -95,5 +95,29 @@ namespace RSGenerate
                         new XAttribute("TagType", "Alias")
                     );
         }
+
+        public static XElement CreateRung(string rungText, string rungType = "N", string rungNumber = "0")
+        {
+            var rung = new XElement("Rung",
+                        new XAttribute("Number", rungNumber),
+                        new XAttribute("Type", rungType));
+            
+            var textElement = new XElement("Text");
+            textElement.Add(new XCData(rungText));
+            rung.Add(textElement);
+
+            return rung;
+        }
+
+        public static void AddSourceRungsToTargetRoutine(IEnumerable<XElement> sourceRungs, XElement routinesElement, string targetRoutineName)
+        {
+            var targetRoutine = XMLHelper.GetOrCreateRoutineWithName(routinesElement, targetRoutineName);
+            //Add Source Ladder Logic to Target Routine
+            var targetRungs = targetRoutine.Descendants("Rung");
+            if (targetRungs != null && targetRungs.Count() > 0)
+                targetRungs.LastOrDefault().AddAfterSelf(sourceRungs); //add to end
+            else
+                targetRoutine.Descendants("RLLContent").LastOrDefault().Add(sourceRungs);
+        }
     }
 }
