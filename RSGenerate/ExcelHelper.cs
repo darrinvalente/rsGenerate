@@ -12,6 +12,8 @@ namespace RSGenerate
     {
         public static string GetCellValue(DataRow row, string col, bool sanitize = true)
         {
+            if (!row.Table.Columns.Contains(col)) { return null; }
+
             var value = row[col].ToString();
 
             if (sanitize)

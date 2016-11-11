@@ -339,15 +339,17 @@ namespace RSGenerate
                 this.AddDeviceRoutine(routinesNode, row, "SE2", "CS_SE", "FXG_CS_SE_SINGLE", "CS_SE", _SE1TagToken);
             }
 
-            this.AddDeviceRoutine(routinesNode, row, "SE3", "CS_SE", "FXG_CS_SE", "CS_SE", _SE1TagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SE3", "CS_SE", "FXG_CS_SE_SINGLE", "CS_SE", _SE1TagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "S1", "CS_S1", "FXG_CS_S1", "CS_S1", _S1TagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "SM1", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
             this.AddDeviceRoutine(routinesNode, row, "SM2", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SM3", "CS_SM", "FXG_CS_SM", "CS_SM", _SMTagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "SS1", "CS_SS", "FXG_CS_SS", "CS_SS", _SSTagToken);
             this.AddDeviceRoutine(routinesNode, row, "SS2", "CS_SS", "FXG_CS_SS", "CS_SS", _SSTagToken);
+            this.AddDeviceRoutine(routinesNode, row, "SS3", "CS_SS", "FXG_CS_SS", "CS_SS", _SSTagToken);
 
             this.AddDeviceRoutine(routinesNode, row, "EPC1", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
             this.AddDeviceRoutine(routinesNode, row, "EPC2", "CS_EPC", "FXG_CS_EPC", "CS_EPC", _EPCTagToken);
@@ -450,14 +452,14 @@ namespace RSGenerate
 
         private Dictionary<string, string> EnumerateTags(DataRow row, Dictionary<string, string> replaceTags)
         {
-            Debug.Print("Processing row " + row["Device Number"].ToString());
+            Debug.Print("Enumerating row " + row["Device Number"].ToString());
 
             if (replaceTags == null)
                 replaceTags = new Dictionary<string, string>();
 
-            for (int i = 12; i <= 24; i++)
+            for (int i = 12; i <= 26; i++)
             {
-                if (!string.IsNullOrEmpty(row[i].ToString()))
+                if (row.ItemArray.Length > i && !string.IsNullOrEmpty(row[i].ToString()))
                 {
                     var col = row.Table.Columns[i].ColumnName.Trim();
                     string tagName = string.Empty;
@@ -465,7 +467,7 @@ namespace RSGenerate
 
                     if (col == "TIP_CHUTE")
                     {
-                        tagName = "CHUTE_XXX";
+                        tagName = "TIP_CHUTE_XXX";
                         tagValue = ExcelHelper.GetCellValue(row, i);
                     }
                     else
@@ -509,18 +511,10 @@ namespace RSGenerate
             //Perform Tag Replacement in ladder text
             foreach (var rung in sourceRungs)
             {
-                foreach (var item in customRungText ?? new Dictionary<string, string>())
-                {
-                    var comment = XMLHelper.GetChildElement(rung, "Comment");
-                    var text = XMLHelper.GetChildElement(rung, "Text");
-                    if (comment != null && text != null && comment.Value.Contains(item.Key))
-                    {
-                        //replace logic
-                        text.Value = item.Value;
-                        //sanitize comment
-                        comment.Value = Regex.Replace(comment.Value, "{{.*?}}", "");
-                    }
-                }
+                var comment = XMLHelper.GetChildElement(rung, "Comment");
+                var text = XMLHelper.GetChildElement(rung, "Text");
+
+                this.ApplyCustomRungLogic(customRungText, comment, text);
 
                 //replace main tag for routine
                 this.ReplaceTagMembers(rung, sourceTagName, targetTagName);
@@ -532,11 +526,27 @@ namespace RSGenerate
                 this.ReplaceCommentText(rung, "{DEVICE_NUMBER}", targetTagName);
 
             }
-           
+
             XMLHelper.AddSourceRungsToTargetRoutine(sourceRungs, routines, targetRoutineName);
 
             if (ensureInMainroutineScanList)
                 EnsureRoutineInMainRoutineScanList(routines, targetRoutineName);
+        }
+
+        private void ApplyCustomRungLogic(Dictionary<string, string> customRungText, XElement comment, XElement text)
+        {
+            //Check to see if any Custom Rung Logic applies
+            foreach (var item in customRungText ?? new Dictionary<string, string>())
+            {
+                if (comment != null && text != null && comment.Value.Contains(item.Key))
+                {
+                    //replace logic in template with Custom Logic from List
+                    text.Value = item.Value;
+
+                    //sanitize comment to remove the {{token}} from the text
+                    comment.Value = Regex.Replace(comment.Value, "{{.*?}}", "");
+                }
+            }
         }
 
         private void EnsureRoutineInMainRoutineScanList(XElement routines, string targetRoutineName)
